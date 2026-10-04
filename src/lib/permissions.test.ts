@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import {
+  canApproveCommissions,
+  canManageEscrows,
+  canSeeAgentFinancials,
+  commissionScope,
+  transactionScope,
+} from "./permissions";
+
+describe("permissions", () => {
+  const agent = { role: "AGENT" as const, agentId: "agent-1" };
+  const broker = { role: "MANAGING_BROKER" as const, agentId: null };
+  const admin = { role: "ADMIN" as const, agentId: null };
+
+  it("limits agents to their own payouts and deals", () => {
+    expect(commissionScope(agent)).toEqual({ agentId: "agent-1" });
+    expect(transactionScope(agent)).toEqual({ agents: { some: { agentId: "agent-1" } } });
+  });
+
+  it("an agent account with no agent profile sees nothing", () => {
+    const scope = commissionScope({ role: "AGENT", agentId: null }) as { agentId: string };
+    expect(scope.agentId).not.toBe("agent-1");
+    expect(scope.agentId).toBeTruthy();
+  });
+
+  it("gives staff the full view", () => {
+    expect(commissionScope(broker)).toEqual({});
+    expect(transactionScope(admin)).toEqual({});
+  });
+
+  it("only the managing broker approves payouts", () => {
+    expect(canApproveCommissions("MANAGING_BROKER")).toBe(true);
+    expect(canApproveCommissions("ADMIN")).toBe(false);
+    expect(canApproveCommissions("AGENT")).toBe(false);
+    expect(canManageEscrows("AGENT")).toBe(false);
+  });
+
+  it("agents can see only their own financials on the roster", () => {
+    expect(canSeeAgentFinancials(agent, "agent-1")).toBe(true);
+    expect(canSeeAgentFinancials(agent, "agent-2")).toBe(false);
+    expect(canSeeAgentFinancials(admin, "agent-2")).toBe(true);
+  });
+});

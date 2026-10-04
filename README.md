@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ap Realty Group — brokerage portal
 
-## Getting Started
+Next.js 14 (App Router) + PostgreSQL + Prisma. Four screens: Dashboard, Listings & pipeline, Agent roster and Onboarding tracker, with email/password sign-in and role-based access (Managing Broker / Admin / Agent).
 
-First, run the development server:
+The data model is described in [docs/data-models.md](docs/data-models.md).
+
+## Local development
+
+Requirements: Node 20+, and Docker (or any PostgreSQL 14+).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker run -d --name ap-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ap_realty -p 5432:5432 postgres:16
+cp .env.example .env          # then set AUTH_SECRET to a random 32+ character string
+npm install
+npx prisma migrate deploy     # create tables
+npm run db:seed               # load demo data (refuses to run in production)
+npm run dev                   # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Demo logins (all use the password `Password123!`, demo data only):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Email | Role |
+| --- | --- |
+| broker@aprealty.test | Managing Broker: sees everything, approves commissions |
+| admin@aprealty.test | Admin: manages escrows, marks commissions paid |
+| marcus@aprealty.test | Agent: sees only his own deals and payouts |
+| sarah@aprealty.test | Agent who is still onboarding |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
+| Command | What it does |
+| --- | --- |
+| `npm test` | Unit tests (commission math, counters, permissions) plus database tests (close/cancel escrow, one open escrow per home). Needs `DATABASE_URL`. |
+| `npm run lint` / `npx tsc --noEmit` | Lint / type check |
+| `npm run db:migrate` | Apply migrations (`prisma migrate deploy`) |
+| `npm run db:seed` | Reset and load demo data |
 
-To learn more about Next.js, take a look at the following resources:
+## Project layout
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `prisma/schema.prisma`: data model. `prisma/migrations/`: SQL migrations, including the partial unique index that allows only one open escrow per listing.
+- `src/lib/calc.ts`: pure business math (commission splits, days on market, escrow day, contingency countdown, onboarding %, pacing).
+- `src/lib/permissions.ts`: who can see and do what. All data queries go through these scopes.
+- `src/lib/escrow.ts`: the close-escrow workflow (creates one payout per agent at their current tier) and the cancel-escrow workflow.
+- `src/lib/queries.ts`: read models for each screen. `src/lib/actions.ts`: server actions (login, escrows, commissions, onboarding).
+- `src/app/(app)/*`: the four screens. `src/middleware.ts`: redirects signed-out users to `/login`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment variables
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Name | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `AUTH_SECRET` | Secret for signing session cookies (32+ characters) |
