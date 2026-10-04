@@ -18,7 +18,7 @@ export function splitLabel(tier: SplitTier) {
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   "W9_AND_BROKER_AGREEMENT",
-  "STATE_DRE_LICENSE_TRANSFER",
+  "IDFPR_SPONSORSHIP_TRANSFER",
   "MLS_BOARD_ACCESS",
   "SUPRA_EKEY",
   "CRM_PROVISIONING",
@@ -27,7 +27,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 
 export const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
   W9_AND_BROKER_AGREEMENT: "W-9 & broker agreement",
-  STATE_DRE_LICENSE_TRANSFER: "State DRE license transfer",
+  IDFPR_SPONSORSHIP_TRANSFER: "IDFPR license sponsorship transfer",
   MLS_BOARD_ACCESS: "MLS board access",
   SUPRA_EKEY: "Supra eKey",
   CRM_PROVISIONING: "CRM setup",

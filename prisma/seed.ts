@@ -1,12 +1,7 @@
 import bcrypt from "bcryptjs";
-import {
-  PrismaClient,
-  type OnboardingStep,
-  type Representation,
-  type SplitTier,
-  type StepStatus,
-} from "@prisma/client";
-import { SPLIT_TIER_AGENT_PERCENT, computeCommission, ONBOARDING_STEPS } from "../src/lib/calc";
+import { PrismaClient, type LicenseType, type Representation, type SplitTier } from "@prisma/client";
+import { SPLIT_TIER_AGENT_PERCENT, computeCommission } from "../src/lib/calc";
+import { complianceDueDate, ensureComplianceYear, isIllinoisRenewalYear } from "../src/lib/compliance";
 
 const prisma = new PrismaClient();
 const DEMO_PASSWORD = "Password123!";
@@ -17,6 +12,7 @@ const daysAgo = (n: number) => new Date(now.getTime() - n * DAY);
 const daysFromNow = (n: number) => new Date(now.getTime() + n * DAY);
 const hoursFromNow = (n: number) => new Date(now.getTime() + n * 3_600_000);
 const yearStart = new Date(now.getFullYear(), 0, 1);
+const nextRenewalYear = [0, 1, 2].map((n) => now.getFullYear() + n).find((y) => isIllinoisRenewalYear(y) && complianceDueDate(y, 4, 30) > now)!;
 /** A date at `fraction` of the way from Jan 1 to now, so closed deals always fall in the current year. */
 const yearFraction = (fraction: number) =>
   new Date(yearStart.getTime() + fraction * (now.getTime() - yearStart.getTime()));
@@ -27,6 +23,8 @@ async function main() {
   }
 
   await prisma.$transaction([
+    prisma.complianceItem.deleteMany(),
+    prisma.complianceRequirement.deleteMany(),
     prisma.commissionRecord.deleteMany(),
     prisma.contingency.deleteMany(),
     prisma.transactionAgent.deleteMany(),
@@ -45,107 +43,48 @@ async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const broker = await prisma.user.create({
-    data: { email: "broker@aprealty.test", name: "Andrea Price", role: "MANAGING_BROKER", passwordHash },
+    data: { email: "omar@aprealty.test", name: "Omar Lopez", role: "MANAGING_BROKER", passwordHash },
   });
   await prisma.user.create({
-    data: { email: "admin@aprealty.test", name: "Jordan Lee", role: "ADMIN", passwordHash },
+    data: { email: "admin@aprealty.test", name: "Office Admin", role: "ADMIN", passwordHash },
   });
 
+  // License numbers, phone numbers and splits are placeholders until real roster data is loaded.
   type AgentSeed = {
     key: string;
     firstName: string;
     lastName: string;
     title: string;
+    licenseType: LicenseType;
     tier: SplitTier;
     license: string;
-    status?: "ACTIVE" | "ONBOARDING";
-    login?: boolean;
     userId?: string;
-    mentor?: string;
   };
   const agentSeeds: AgentSeed[] = [
-    { key: "andrea", firstName: "Andrea", lastName: "Price", title: "Managing Broker", tier: "TIER_PRESTIGE_90_10", license: "01844210", userId: broker.id },
-    { key: "marcus", firstName: "Marcus", lastName: "Vance", title: "Senior Managing Associate", tier: "TIER_PRESTIGE_90_10", license: "02194880", login: true },
-    { key: "elena", firstName: "Elena", lastName: "Rostova", title: "Luxury Estates Associate", tier: "TIER_STANDARD_85_15", license: "02077315", login: true },
-    { key: "david", firstName: "David", lastName: "Okafor", title: "Associate", tier: "TIER_ASSOCIATE_80_20", license: "02233019" },
-    { key: "priya", firstName: "Priya", lastName: "Shah", title: "Associate", tier: "TIER_STANDARD_85_15", license: "02150472" },
-    { key: "tom", firstName: "Tom", lastName: "Reilly", title: "Associate", tier: "TIER_ASSOCIATE_80_20", license: "02261145" },
-    { key: "sarah", firstName: "Sarah", lastName: "Lin", title: "Associate (Onboarding)", tier: "TIER_INCUBATOR_70_30", license: "02310887", status: "ONBOARDING", login: true, mentor: "marcus" },
-    { key: "kevin", firstName: "Kevin", lastName: "Moreno", title: "Associate (Onboarding)", tier: "TIER_INCUBATOR_70_30", license: "02315520", status: "ONBOARDING", mentor: "elena" },
-    { key: "nina", firstName: "Nina", lastName: "Alvarez", title: "Associate (Onboarding)", tier: "TIER_INCUBATOR_70_30", license: "02318064", status: "ONBOARDING", mentor: "marcus" },
+    { key: "omar", firstName: "Omar", lastName: "Lopez", title: "Managing Broker", licenseType: "MANAGING_BROKER", tier: "TIER_PRESTIGE_90_10", license: "471.000101", userId: broker.id },
+    { key: "adam", firstName: "Adam", lastName: "Delort", title: "Broker", licenseType: "BROKER", tier: "TIER_STANDARD_85_15", license: "475.000102" },
+    { key: "lucy", firstName: "Lucy", lastName: "Castillo", title: "Broker", licenseType: "BROKER", tier: "TIER_ASSOCIATE_80_20", license: "475.000103" },
   ];
 
   const agents: Record<string, { id: string }> = {};
   for (const [i, a] of agentSeeds.entries()) {
     const email = `${a.firstName.toLowerCase()}@aprealty.test`;
-    let userId = a.userId;
-    if (a.login) {
-      const user = await prisma.user.create({
-        data: { email, name: `${a.firstName} ${a.lastName}`, role: "AGENT", passwordHash },
-      });
-      userId = user.id;
-    }
+    const userId =
+      a.userId ??
+      (await prisma.user.create({ data: { email, name: `${a.firstName} ${a.lastName}`, role: "AGENT", passwordHash } })).id;
     agents[a.key] = await prisma.agent.create({
       data: {
         userId,
         firstName: a.firstName,
         lastName: a.lastName,
         email,
-        phone: `(310) 555-01${String(i + 10).padStart(2, "0")}`,
+        phone: `(312) 555-01${String(i + 10).padStart(2, "0")}`,
         licenseNumber: a.license,
+        licenseType: a.licenseType,
+        licenseExpiresAt: complianceDueDate(nextRenewalYear, 4, 30),
         title: a.title,
-        status: a.status ?? "ACTIVE",
+        status: "ACTIVE",
         splitTier: a.tier,
-      },
-    });
-  }
-  for (const a of agentSeeds.filter((s) => s.mentor)) {
-    await prisma.agent.update({ where: { id: agents[a.key].id }, data: { mentorId: agents[a.mentor!].id } });
-  }
-
-  // Onboarding
-  const onboarding: Record<string, { status: Partial<Record<OnboardingStep, StepStatus>>; notes: Partial<Record<OnboardingStep, string>>; weeks: number }> = {
-    sarah: {
-      status: {
-        W9_AND_BROKER_AGREEMENT: "COMPLETE",
-        STATE_DRE_LICENSE_TRANSFER: "AWAITING_EXTERNAL",
-        MLS_BOARD_ACCESS: "COMPLETE",
-        SUPRA_EKEY: "COMPLETE",
-        CRM_PROVISIONING: "COMPLETE",
-        MENTOR_ASSIGNMENT: "COMPLETE",
-      },
-      notes: { STATE_DRE_LICENSE_TRANSFER: "Awaiting State DRE approval" },
-      weeks: 1,
-    },
-    kevin: {
-      status: { W9_AND_BROKER_AGREEMENT: "COMPLETE", STATE_DRE_LICENSE_TRANSFER: "COMPLETE", MLS_BOARD_ACCESS: "IN_PROGRESS" },
-      notes: { MLS_BOARD_ACCESS: "Orientation booked for next Tuesday" },
-      weeks: 4,
-    },
-    nina: {
-      status: {
-        W9_AND_BROKER_AGREEMENT: "COMPLETE",
-        STATE_DRE_LICENSE_TRANSFER: "COMPLETE",
-        MLS_BOARD_ACCESS: "COMPLETE",
-        SUPRA_EKEY: "BLOCKED",
-        CRM_PROVISIONING: "COMPLETE",
-      },
-      notes: { SUPRA_EKEY: "Waiting on MLS board dues payment" },
-      weeks: 2,
-    },
-  };
-  for (const [key, o] of Object.entries(onboarding)) {
-    await prisma.onboardingRecord.create({
-      data: {
-        agentId: agents[key].id,
-        backgroundCheckClearedAt: daysAgo(20),
-        targetGraduationDate: daysFromNow(o.weeks * 7),
-        steps: {
-          create: ONBOARDING_STEPS.map((step) => {
-            const status = o.status[step] ?? "NOT_STARTED";
-            return { step, status, blockerNote: o.notes[step] ?? null, completedAt: status === "COMPLETE" ? daysAgo(5) : null };
-          }),
-        },
       },
     });
   }
@@ -181,7 +120,7 @@ async function main() {
   }) {
     const t = await prisma.transaction.create({
       data: {
-        listingId, status: input.status, escrowNumber: `ESC-${escrow++}`, escrowCompany: "Westside Escrow Co.",
+        listingId, status: input.status, escrowNumber: `ESC-${escrow++}`, escrowCompany: "Lakeshore Title Co.",
         finalAgreedPrice: input.price, grossCommissionPercent: 3, escrowStartDate: input.start,
         targetClosingDate: input.targetClose, actualClosingDate: input.closedAt ?? null,
         cancelledAt: input.status === "CANCELLED" ? input.targetClose : null,
@@ -209,24 +148,24 @@ async function main() {
     return t;
   }
 
-  // Closed this year: $48.6M volume → $1.458M GCI at 3%; Marcus = $12.4M → $372K GCI
+  // Closed this year: $48.6M volume → $1.458M GCI at 3%
   const closed: { address: string; city: string; zip: string; price: number; sides: Side[]; at: number; approved?: boolean; paid?: boolean }[] = [
-    { address: "12 Bel Air Crest", city: "Los Angeles", zip: "90077", price: 4_200_000, sides: [{ agent: "marcus", rep: "SELLER", share: 100 }], at: 0.08 },
-    { address: "901 N Roxbury Dr", city: "Beverly Hills", zip: "90210", price: 6_500_000, sides: [{ agent: "andrea", rep: "SELLER", share: 100 }], at: 0.15 },
-    { address: "2200 Pacific Coast Hwy", city: "Malibu", zip: "90265", price: 5_350_000, sides: [{ agent: "elena", rep: "DUAL", share: 100 }], at: 0.22 },
-    { address: "48 Carbon Mesa Rd", city: "Malibu", zip: "90265", price: 3_600_000, sides: [{ agent: "marcus", rep: "BUYER", share: 100 }], at: 0.3 },
-    { address: "615 Alta Ave", city: "Santa Monica", zip: "90402", price: 3_950_000, sides: [{ agent: "elena", rep: "SELLER", share: 100 }], at: 0.36 },
-    { address: "1420 Blue Jay Way", city: "Los Angeles", zip: "90069", price: 4_000_000, sides: [{ agent: "david", rep: "SELLER", share: 50 }, { agent: "priya", rep: "SELLER", share: 50 }], at: 0.44 },
-    { address: "77 Stone Canyon Rd", city: "Los Angeles", zip: "90077", price: 2_750_000, sides: [{ agent: "marcus", rep: "SELLER", share: 100 }], at: 0.5 },
-    { address: "305 S Camden Dr", city: "Beverly Hills", zip: "90212", price: 2_900_000, sides: [{ agent: "elena", rep: "BUYER", share: 100 }], at: 0.56 },
-    { address: "8840 Hollywood Blvd", city: "Los Angeles", zip: "90069", price: 2_800_000, sides: [{ agent: "priya", rep: "SELLER", share: 100 }], at: 0.62 },
-    { address: "1129 Ocean Park Blvd", city: "Santa Monica", zip: "90405", price: 2_100_000, sides: [{ agent: "david", rep: "BUYER", share: 100 }], at: 0.68 },
-    { address: "16 Rustic Canyon Ln", city: "Los Angeles", zip: "90049", price: 2_350_000, sides: [{ agent: "elena", rep: "SELLER", share: 100 }], at: 0.74 },
-    { address: "4410 Ventura Canyon Ave", city: "Sherman Oaks", zip: "91423", price: 1_450_000, sides: [{ agent: "tom", rep: "SELLER", share: 100 }], at: 0.8 },
-    { address: "622 Sycamore Rd", city: "Santa Monica", zip: "90402", price: 1_950_000, sides: [{ agent: "priya", rep: "BUYER", share: 100 }], at: 0.85 },
-    { address: "3301 Coldwater Canyon", city: "Studio City", zip: "91604", price: 1_650_000, sides: [{ agent: "david", rep: "SELLER", share: 100 }], at: 0.9 },
-    { address: "210 Amalfi Dr", city: "Los Angeles", zip: "90402", price: 1_850_000, sides: [{ agent: "marcus", rep: "SELLER", share: 100 }], at: 0.96, paid: false },
-    { address: "5521 Woodman Ave", city: "Sherman Oaks", zip: "91401", price: 1_200_000, sides: [{ agent: "tom", rep: "BUYER", share: 100 }], at: 0.99, approved: false },
+    { address: "1840 N Lincoln Park West", city: "Chicago", zip: "60614", price: 4_200_000, sides: [{ agent: "adam", rep: "SELLER", share: 100 }], at: 0.08 },
+    { address: "1430 N Astor St", city: "Chicago", zip: "60610", price: 6_500_000, sides: [{ agent: "omar", rep: "SELLER", share: 100 }], at: 0.15 },
+    { address: "455 Sheridan Rd", city: "Winnetka", zip: "60093", price: 5_350_000, sides: [{ agent: "lucy", rep: "DUAL", share: 100 }], at: 0.22 },
+    { address: "720 Greenwood Ave", city: "Glencoe", zip: "60022", price: 3_600_000, sides: [{ agent: "adam", rep: "BUYER", share: 100 }], at: 0.3 },
+    { address: "1225 N Lake Shore Dr", city: "Chicago", zip: "60610", price: 3_950_000, sides: [{ agent: "lucy", rep: "SELLER", share: 100 }], at: 0.36 },
+    { address: "530 W Belden Ave", city: "Chicago", zip: "60614", price: 4_000_000, sides: [{ agent: "adam", rep: "SELLER", share: 50 }, { agent: "lucy", rep: "SELLER", share: 50 }], at: 0.44 },
+    { address: "245 E Westminster", city: "Lake Forest", zip: "60045", price: 2_750_000, sides: [{ agent: "adam", rep: "SELLER", share: 100 }], at: 0.5 },
+    { address: "618 S Garfield St", city: "Hinsdale", zip: "60521", price: 2_900_000, sides: [{ agent: "lucy", rep: "BUYER", share: 100 }], at: 0.56 },
+    { address: "2154 N Hudson Ave", city: "Chicago", zip: "60614", price: 2_800_000, sides: [{ agent: "lucy", rep: "SELLER", share: 100 }], at: 0.62 },
+    { address: "915 Forest Ave", city: "Evanston", zip: "60202", price: 2_100_000, sides: [{ agent: "adam", rep: "BUYER", share: 100 }], at: 0.68 },
+    { address: "1104 Ashland Ave", city: "River Forest", zip: "60305", price: 2_350_000, sides: [{ agent: "lucy", rep: "SELLER", share: 100 }], at: 0.74 },
+    { address: "38 Natoma Dr", city: "Oak Brook", zip: "60523", price: 1_450_000, sides: [{ agent: "omar", rep: "SELLER", share: 100 }], at: 0.8 },
+    { address: "1600 Elmwood Ave", city: "Wilmette", zip: "60091", price: 1_950_000, sides: [{ agent: "lucy", rep: "BUYER", share: 100 }], at: 0.85 },
+    { address: "1015 N Wolcott Ave", city: "Chicago", zip: "60622", price: 1_650_000, sides: [{ agent: "adam", rep: "SELLER", share: 100 }], at: 0.9 },
+    { address: "420 Kenilworth Ave", city: "Kenilworth", zip: "60043", price: 1_850_000, sides: [{ agent: "adam", rep: "SELLER", share: 100 }], at: 0.96, paid: false },
+    { address: "1212 W Webster Ave", city: "Chicago", zip: "60614", price: 1_200_000, sides: [{ agent: "lucy", rep: "BUYER", share: 100 }], at: 0.99, approved: false },
   ];
   for (const [i, c] of closed.entries()) {
     const closedAt = yearFraction(c.at);
@@ -242,44 +181,44 @@ async function main() {
 
   // Active inventory and open escrows
   const evergreen = await listing({
-    address: "742 Evergreen Terrace", city: "Beverly Hills", zipCode: "90210", price: 3_850_000, agent: "marcus",
+    address: "742 Evergreen Terrace", city: "Winnetka", zipCode: "60093", price: 3_850_000, agent: "adam",
     status: "PENDING_ESCROW", beds: 6, baths: 6.5, sqft: 8200, listedAt: daysAgo(32), offMarketAt: daysAgo(11), showings: 41, offers: 4,
   });
   await deal(evergreen.id, {
-    status: "OPEN", price: 3_850_000, sides: [{ agent: "marcus", rep: "SELLER", share: 100 }], start: daysAgo(11), targetClose: daysFromNow(19),
+    status: "OPEN", price: 3_850_000, sides: [{ agent: "adam", rep: "SELLER", share: 100 }], start: daysAgo(11), targetClose: daysFromNow(19),
     contingencies: [{ type: "INSPECTION", deadline: hoursFromNow(48) }, { type: "LOAN", deadline: daysFromNow(10) }],
   });
 
   const palisades = await listing({
-    address: "310 Palisades Ave", city: "Santa Monica", zipCode: "90402", price: 4_100_000, agent: "elena",
+    address: "310 Sheridan Rd", city: "Highland Park", zipCode: "60035", price: 4_100_000, agent: "lucy",
     status: "PENDING_ESCROW", beds: 5, baths: 5, sqft: 5600, listedAt: daysAgo(40), offMarketAt: daysAgo(18), showings: 33, offers: 3,
   });
   await deal(palisades.id, {
-    status: "OPEN", price: 4_025_000, sides: [{ agent: "elena", rep: "SELLER", share: 100 }], start: daysAgo(18), targetClose: daysFromNow(12),
+    status: "OPEN", price: 4_025_000, sides: [{ agent: "lucy", rep: "SELLER", share: 100 }], start: daysAgo(18), targetClose: daysFromNow(12),
     contingencies: [{ type: "INSPECTION", deadline: daysAgo(8), removed: true }, { type: "APPRAISAL", deadline: daysFromNow(5) }],
   });
 
   const laurel = await listing({
-    address: "28 Laurel Canyon Ct", city: "Los Angeles", zipCode: "90046", price: 1_895_000, agent: "david",
+    address: "28 Laurel Ave", city: "Wilmette", zipCode: "60091", price: 1_895_000, agent: "adam",
     status: "PENDING_ESCROW", beds: 4, baths: 3, sqft: 3100, listedAt: daysAgo(26), offMarketAt: daysAgo(6), showings: 22, offers: 2,
   });
   await deal(laurel.id, {
-    status: "OPEN", price: 1_910_000, sides: [{ agent: "david", rep: "SELLER", share: 50 }, { agent: "priya", rep: "SELLER", share: 50 }],
+    status: "OPEN", price: 1_910_000, sides: [{ agent: "adam", rep: "SELLER", share: 50 }, { agent: "lucy", rep: "SELLER", share: 50 }],
     start: daysAgo(6), targetClose: daysFromNow(24), contingencies: [{ type: "INSPECTION", deadline: daysFromNow(4) }],
   });
 
   const mulholland = await listing({
-    address: "77 Mulholland Estates", city: "Sherman Oaks", zipCode: "91403", price: 3_275_000, agent: "tom",
+    address: "77 Lakewood Dr", city: "Barrington", zipCode: "60010", price: 3_275_000, agent: "omar",
     status: "ACTIVE", beds: 5, baths: 4.5, sqft: 4900, listedAt: daysAgo(52), showings: 37, offers: 1,
   });
   await deal(mulholland.id, {
-    status: "CANCELLED", price: 3_200_000, sides: [{ agent: "tom", rep: "SELLER", share: 100 }], start: daysAgo(30), targetClose: daysAgo(9),
+    status: "CANCELLED", price: 3_200_000, sides: [{ agent: "omar", rep: "SELLER", share: 100 }], start: daysAgo(30), targetClose: daysAgo(9),
   });
 
-  await listing({ address: "1180 Summit Ridge Dr", city: "Beverly Hills", zipCode: "90210", price: 5_200_000, agent: "elena", status: "ACTIVE", beds: 6, baths: 7, sqft: 7400, listedAt: daysAgo(14), showings: 12, offers: 0 });
-  await listing({ address: "455 Ocean Vista Ln", city: "Malibu", zipCode: "90265", price: 7_450_000, agent: "marcus", status: "ACTIVE", beds: 5, baths: 6, sqft: 6800, listedAt: daysAgo(19), showings: 9, offers: 1 });
-  await listing({ address: "1650 Linda Flora Dr", city: "Los Angeles", zipCode: "90077", price: 2_495_000, agent: "priya", status: "ACTIVE", beds: 4, baths: 3.5, sqft: 3600, listedAt: daysAgo(8), showings: 6, offers: 0 });
-  await listing({ address: "9021 Sunset Plaza Dr", city: "West Hollywood", zipCode: "90069", price: 2_640_000, agent: "priya", status: "COMING_SOON", beds: 3, baths: 3.5, sqft: 2900, listedAt: null });
+  await listing({ address: "1180 Green Bay Rd", city: "Glencoe", zipCode: "60022", price: 5_200_000, agent: "lucy", status: "ACTIVE", beds: 6, baths: 7, sqft: 7400, listedAt: daysAgo(14), showings: 12, offers: 0 });
+  await listing({ address: "455 E Deerpath Rd", city: "Lake Forest", zipCode: "60045", price: 7_450_000, agent: "adam", status: "ACTIVE", beds: 5, baths: 6, sqft: 6800, listedAt: daysAgo(19), showings: 9, offers: 1 });
+  await listing({ address: "1650 N Wells St", city: "Chicago", zipCode: "60614", price: 2_495_000, agent: "lucy", status: "ACTIVE", beds: 4, baths: 3.5, sqft: 3600, listedAt: daysAgo(8), showings: 6, offers: 0 });
+  await listing({ address: "921 W Armitage Ave", city: "Chicago", zipCode: "60614", price: 2_640_000, agent: "lucy", status: "COMING_SOON", beds: 3, baths: 3.5, sqft: 2900, listedAt: null });
 
   // Targets
   const year = now.getFullYear();
@@ -292,8 +231,26 @@ async function main() {
     });
   }
 
+  // Illinois compliance: last year fully done, this year partly done
+  for (const y of [year - 1, year]) await ensureComplianceYear(prisma, y);
+  const items = await prisma.complianceItem.findMany({ include: { requirement: true } });
+  const inProgress: Record<string, string> = {
+    ADVERTISING_REVIEW: "Website reviewed; social media audit still open",
+    ESCROW_RECONCILIATION: "January through last month reconciled",
+  };
+  for (const item of items) {
+    const note = item.year === year ? inProgress[item.requirement.code] : undefined;
+    const done = !note && item.dueDate < now;
+    await prisma.complianceItem.update({
+      where: { id: item.id },
+      data: done
+        ? { status: "COMPLETE", completedAt: new Date(item.dueDate.getTime() - 5 * DAY), completedById: broker.id }
+        : { status: note ? "IN_PROGRESS" : "NOT_STARTED", note: note ?? null },
+    });
+  }
+
   console.log(`Seeded demo data. Demo logins (password "${DEMO_PASSWORD}"):`);
-  console.log("  broker@aprealty.test (Managing Broker), admin@aprealty.test (Admin), marcus@aprealty.test (Agent), sarah@aprealty.test (Onboarding agent)");
+  console.log("  omar@aprealty.test (Managing Broker), admin@aprealty.test (Admin), adam@aprealty.test and lucy@aprealty.test (Brokers)");
 }
 
 main()

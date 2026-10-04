@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-6">
             <div className="text-base font-semibold tracking-tight text-white">
-              Ap Realty <span className="text-amber-400">Group</span>
+              A.P Realty <span className="text-amber-400">Group Inc.</span>
             </div>
             <Nav />
           </div>

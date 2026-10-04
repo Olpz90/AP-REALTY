@@ -9,6 +9,7 @@ export const canManageEscrows = (role: UserRole) => isStaff(role);
 export const canApproveCommissions = (role: UserRole) => role === "MANAGING_BROKER";
 export const canMarkCommissionsPaid = (role: UserRole) => isStaff(role);
 export const canEditOnboarding = (role: UserRole) => isStaff(role);
+export const canEditCompliance = (role: UserRole) => isStaff(role);
 
 export function transactionScope(viewer: Viewer): Prisma.TransactionWhereInput {
   if (isStaff(viewer.role)) return {};
@@ -21,6 +22,11 @@ export function commissionScope(viewer: Viewer): Prisma.CommissionRecordWhereInp
 }
 
 export function onboardingScope(viewer: Viewer): Prisma.OnboardingRecordWhereInput {
+  if (isStaff(viewer.role)) return {};
+  return { agentId: viewer.agentId ?? NO_AGENT };
+}
+
+export function complianceScope(viewer: Viewer): Prisma.ComplianceItemWhereInput {
   if (isStaff(viewer.role)) return {};
   return { agentId: viewer.agentId ?? NO_AGENT };
 }

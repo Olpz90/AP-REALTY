@@ -22,7 +22,7 @@ export default async function RosterPage() {
             <tr>
               {staff && <th className="px-5 py-3 font-medium">#</th>}
               <th className="px-5 py-3 font-medium">Agent</th>
-              <th className="px-5 py-3 font-medium">CalDRE #</th>
+              <th className="px-5 py-3 font-medium">IDFPR license #</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Mentor</th>
               <th className="px-5 py-3 font-medium">Active listings</th>

@@ -11,7 +11,7 @@ export default async function LoginPage() {
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xl">
         <div className="mb-6 text-center">
           <div className="text-xl font-semibold tracking-tight">
-            Ap Realty <span className="text-amber-500">Group</span>
+            A.P Realty <span className="text-amber-500">Group Inc.</span>
           </div>
           <p className="mt-1 text-sm text-slate-500">Sign in to the brokerage portal</p>
         </div>

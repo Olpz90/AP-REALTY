@@ -20,10 +20,22 @@ CREATE TYPE "Representation" AS ENUM ('SELLER', 'BUYER', 'DUAL');
 CREATE TYPE "ContingencyType" AS ENUM ('INSPECTION', 'APPRAISAL', 'LOAN', 'OTHER');
 
 -- CreateEnum
-CREATE TYPE "OnboardingStep" AS ENUM ('W9_AND_BROKER_AGREEMENT', 'STATE_DRE_LICENSE_TRANSFER', 'MLS_BOARD_ACCESS', 'SUPRA_EKEY', 'CRM_PROVISIONING', 'MENTOR_ASSIGNMENT');
+CREATE TYPE "OnboardingStep" AS ENUM ('W9_AND_BROKER_AGREEMENT', 'IDFPR_SPONSORSHIP_TRANSFER', 'MLS_BOARD_ACCESS', 'SUPRA_EKEY', 'CRM_PROVISIONING', 'MENTOR_ASSIGNMENT');
 
 -- CreateEnum
 CREATE TYPE "StepStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'AWAITING_EXTERNAL', 'BLOCKED', 'COMPLETE');
+
+-- CreateEnum
+CREATE TYPE "LicenseType" AS ENUM ('MANAGING_BROKER', 'BROKER');
+
+-- CreateEnum
+CREATE TYPE "ComplianceScope" AS ENUM ('BROKERAGE', 'LICENSEE');
+
+-- CreateEnum
+CREATE TYPE "ComplianceFrequency" AS ENUM ('ANNUAL', 'RENEWAL_YEAR');
+
+-- CreateEnum
+CREATE TYPE "ComplianceStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'NOT_APPLICABLE');
 
 -- CreateTable
 CREATE TABLE "User" (
@@ -48,6 +60,7 @@ CREATE TABLE "Agent" (
     "email" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
     "licenseNumber" TEXT NOT NULL,
+    "licenseType" "LicenseType" NOT NULL DEFAULT 'BROKER',
     "licenseExpiresAt" TIMESTAMP(3),
     "title" TEXT NOT NULL,
     "avatarUrl" TEXT,
@@ -93,7 +106,7 @@ CREATE TABLE "Listing" (
     "mlsNumber" TEXT NOT NULL,
     "address" TEXT NOT NULL,
     "city" TEXT NOT NULL,
-    "state" TEXT NOT NULL DEFAULT 'CA',
+    "state" TEXT NOT NULL DEFAULT 'IL',
     "zipCode" TEXT NOT NULL,
     "price" DECIMAL(12,2) NOT NULL,
     "status" "ListingStatus" NOT NULL DEFAULT 'COMING_SOON',
@@ -202,6 +215,41 @@ CREATE TABLE "BrokerageMonthlyTarget" (
     CONSTRAINT "BrokerageMonthlyTarget_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "ComplianceRequirement" (
+    "id" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "reference" TEXT,
+    "scope" "ComplianceScope" NOT NULL,
+    "frequency" "ComplianceFrequency" NOT NULL,
+    "licenseTypes" "LicenseType"[],
+    "dueMonth" INTEGER NOT NULL,
+    "dueDay" INTEGER NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "ComplianceRequirement_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ComplianceItem" (
+    "id" TEXT NOT NULL,
+    "year" INTEGER NOT NULL,
+    "requirementId" TEXT NOT NULL,
+    "agentId" TEXT,
+    "status" "ComplianceStatus" NOT NULL DEFAULT 'NOT_STARTED',
+    "dueDate" TIMESTAMP(3) NOT NULL,
+    "completedAt" TIMESTAMP(3),
+    "completedById" TEXT,
+    "note" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ComplianceItem_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -271,6 +319,15 @@ CREATE UNIQUE INDEX "BrokerageAnnualGoal_year_key" ON "BrokerageAnnualGoal"("yea
 -- CreateIndex
 CREATE UNIQUE INDEX "BrokerageMonthlyTarget_year_month_key" ON "BrokerageMonthlyTarget"("year", "month");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "ComplianceRequirement_code_key" ON "ComplianceRequirement"("code");
+
+-- CreateIndex
+CREATE INDEX "ComplianceItem_year_status_idx" ON "ComplianceItem"("year", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ComplianceItem_year_requirementId_agentId_key" ON "ComplianceItem"("year", "requirementId", "agentId");
+
 -- AddForeignKey
 ALTER TABLE "Agent" ADD CONSTRAINT "Agent_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
@@ -316,5 +373,17 @@ ALTER TABLE "CommissionRecord" ADD CONSTRAINT "CommissionRecord_transactionId_ag
 -- AddForeignKey
 ALTER TABLE "CommissionRecord" ADD CONSTRAINT "CommissionRecord_approvedById_fkey" FOREIGN KEY ("approvedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- Only one OPEN escrow per listing (not expressible in Prisma schema)
+-- AddForeignKey
+ALTER TABLE "ComplianceItem" ADD CONSTRAINT "ComplianceItem_requirementId_fkey" FOREIGN KEY ("requirementId") REFERENCES "ComplianceRequirement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ComplianceItem" ADD CONSTRAINT "ComplianceItem_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "Agent"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ComplianceItem" ADD CONSTRAINT "ComplianceItem_completedById_fkey" FOREIGN KEY ("completedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Only one open escrow per listing (Prisma can't express partial indexes).
 CREATE UNIQUE INDEX "Transaction_one_open_per_listing" ON "Transaction"("listingId") WHERE status = 'OPEN';
+
+-- One brokerage-level compliance row per requirement per year (agentId is null).
+CREATE UNIQUE INDEX "ComplianceItem_brokerage_unique" ON "ComplianceItem"("year", "requirementId") WHERE "agentId" IS NULL;

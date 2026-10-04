@@ -58,7 +58,7 @@ enum ContingencyType {
 
 enum OnboardingStep {
   W9_AND_BROKER_AGREEMENT
-  STATE_DRE_LICENSE_TRANSFER
+  IDFPR_SPONSORSHIP_TRANSFER
   MLS_BOARD_ACCESS
   SUPRA_EKEY
   CRM_PROVISIONING
@@ -68,9 +68,31 @@ enum OnboardingStep {
 enum StepStatus {
   NOT_STARTED
   IN_PROGRESS
-  AWAITING_EXTERNAL // e.g. waiting on the State DRE
+  AWAITING_EXTERNAL // e.g. waiting on IDFPR
   BLOCKED
   COMPLETE
+}
+
+enum LicenseType {
+  MANAGING_BROKER // IDFPR managing broker license
+  BROKER // IDFPR broker license
+}
+
+enum ComplianceScope {
+  BROKERAGE // one item per year for the firm itself
+  LICENSEE // one item per year for each sponsored broker
+}
+
+enum ComplianceFrequency {
+  ANNUAL
+  RENEWAL_YEAR // only in Illinois license renewal years (even years)
+}
+
+enum ComplianceStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+  NOT_APPLICABLE
 }
 
 // ───────────── 0. LOGIN & PERMISSIONS ─────────────
@@ -86,6 +108,7 @@ model User {
   agent               Agent?
   approvedCommissions CommissionRecord[] @relation("CommissionApprover")
   auditedTransactions Transaction[]      @relation("Hud1Auditor")
+  completedCompliance ComplianceItem[]   @relation("ComplianceCompleter")
   createdAt           DateTime           @default(now())
 }
 
@@ -99,7 +122,8 @@ model Agent {
   lastName         String
   email            String      @unique
   phone            String
-  licenseNumber    String      @unique // e.g. CalDRE #0219488
+  licenseNumber    String      @unique // IDFPR license number, e.g. 475.162034
+  licenseType      LicenseType @default(BROKER)
   licenseExpiresAt DateTime?
   title            String // display title, e.g. "Senior Managing Associate"
   avatarUrl        String?
@@ -113,6 +137,7 @@ model Agent {
   transactions      TransactionAgent[]
   onboardingRecord  OnboardingRecord?
   commissionPayouts CommissionRecord[]
+  complianceItems   ComplianceItem[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -141,7 +166,7 @@ model OnboardingStepProgress {
   onboardingRecord   OnboardingRecord @relation(fields: [onboardingRecordId], references: [id], onDelete: Cascade)
   step               OnboardingStep
   status             StepStatus       @default(NOT_STARTED)
-  blockerNote        String? // e.g. "Awaiting State DRE approval"
+  blockerNote        String? // e.g. "Awaiting IDFPR sponsorship approval"
   completedAt        DateTime?
   updatedAt          DateTime         @updatedAt
 
@@ -155,7 +180,7 @@ model Listing {
   mlsNumber      String         @unique // e.g. MLS #24-9182
   address        String // e.g. "742 Evergreen Terrace"
   city           String
-  state          String         @default("CA")
+  state          String         @default("IL")
   zipCode        String
   price          Decimal        @db.Decimal(12, 2) // e.g. 3850000.00
   status         ListingStatus  @default(COMING_SOON)
@@ -285,4 +310,45 @@ model BrokerageMonthlyTarget {
   mlsBenchmarkDom Int? // regional MLS average DOM for the month, e.g. 34
 
   @@unique([year, month])
+}
+
+// ───────────── 7. ILLINOIS COMPLIANCE ─────────────
+
+// The checklist template, e.g. "Complete 12 hours of broker CE".
+model ComplianceRequirement {
+  id           String              @id @default(uuid())
+  code         String              @unique // stable key, e.g. "CE_BROKER"
+  title        String
+  description  String
+  reference    String? // statute or rule, e.g. "225 ILCS 454"
+  scope        ComplianceScope
+  frequency    ComplianceFrequency
+  licenseTypes LicenseType[] // empty = applies to every licensee
+  dueMonth     Int // 1–12
+  dueDay       Int
+  sortOrder    Int                 @default(0)
+  isActive     Boolean             @default(true)
+  items        ComplianceItem[]
+}
+
+// One checklist line per requirement, per year, per broker (or for the brokerage when agentId is null).
+model ComplianceItem {
+  id            String                @id @default(uuid())
+  year          Int
+  requirementId String
+  requirement   ComplianceRequirement @relation(fields: [requirementId], references: [id])
+  agentId       String? // null = brokerage-level item
+  agent         Agent?                @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status        ComplianceStatus      @default(NOT_STARTED)
+  dueDate       DateTime
+  completedAt   DateTime?
+  completedById String?
+  completedBy   User?                 @relation("ComplianceCompleter", fields: [completedById], references: [id])
+  note          String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  // Brokerage-level rows (agentId null) are kept unique by a partial index in the migration.
+  @@unique([year, requirementId, agentId])
+  @@index([year, status])
 }

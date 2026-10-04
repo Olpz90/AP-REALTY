@@ -1,6 +1,6 @@
-# Ap Realty Group — brokerage portal
+# A.P Realty Group Inc. — brokerage portal
 
-Next.js 14 (App Router) + PostgreSQL + Prisma. Four screens: Dashboard, Listings & pipeline, Agent roster and Onboarding tracker, with email/password sign-in and role-based access (Managing Broker / Admin / Agent).
+Next.js 14 (App Router) + PostgreSQL + Prisma. Five screens: Dashboard, Listings & pipeline, Agent roster, Onboarding tracker and a yearly Illinois compliance checklist, with email/password sign-in and role-based access (Managing Broker / Admin / Agent).
 
 The data model is described in [docs/data-models.md](docs/data-models.md).
 
@@ -21,10 +21,10 @@ Demo logins (all use the password `Password123!`, demo data only):
 
 | Email | Role |
 | --- | --- |
-| broker@aprealty.test | Managing Broker: sees everything, approves commissions |
-| admin@aprealty.test | Admin: manages escrows, marks commissions paid |
-| marcus@aprealty.test | Agent: sees only his own deals and payouts |
-| sarah@aprealty.test | Agent who is still onboarding |
+| omar@aprealty.test | Omar Lopez, Managing Broker: sees everything, approves commissions, updates compliance |
+| admin@aprealty.test | Office Admin: manages escrows, marks commissions paid, updates compliance |
+| adam@aprealty.test | Adam Delort, Broker: sees only his own deals, payouts and compliance items |
+| lucy@aprealty.test | Lucy Castillo, Broker: same as Adam |
 
 ## Scripts
 
@@ -41,8 +41,9 @@ Demo logins (all use the password `Password123!`, demo data only):
 - `src/lib/calc.ts`: pure business math (commission splits, days on market, escrow day, contingency countdown, onboarding %, pacing).
 - `src/lib/permissions.ts`: who can see and do what. All data queries go through these scopes.
 - `src/lib/escrow.ts`: the close-escrow workflow (creates one payout per agent at their current tier) and the cancel-escrow workflow.
+- `src/lib/compliance.ts`: the Illinois checklist catalog and yearly checklist generation (renewal-year items only in even years).
 - `src/lib/queries.ts`: read models for each screen. `src/lib/actions.ts`: server actions (login, escrows, commissions, onboarding).
-- `src/app/(app)/*`: the four screens. `src/middleware.ts`: redirects signed-out users to `/login`.
+- `src/app/(app)/*`: the screens. `src/middleware.ts`: redirects signed-out users to `/login`.
 
 ## Environment variables
 

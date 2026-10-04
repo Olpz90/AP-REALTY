@@ -1,6 +1,6 @@
-# Ap Realty Group Inc. — Database Architecture & Data Models Guide (v2)
+# A.P Realty Group Inc. — Database Architecture & Data Models Guide (v2)
 
-This document lists the data structures (models) behind the **Ap Realty Group Inc.** brokerage management app. Each model is first explained in plain language for non-technical leadership, then defined in an implementation-ready schema.
+This document lists the data structures (models) behind the **A.P Realty Group Inc.** brokerage management app. Each model is first explained in plain language for non-technical leadership, then defined in an implementation-ready schema.
 
 > **What changed from v1:** see Section 5 at the end. In short, v2 handles co-listed payouts, deals that fall out of escrow, and logins/permissions. It also stops storing countdowns and percentages that would go out of date.
 
@@ -28,12 +28,12 @@ The 4 screens (Dashboard, Listings, Roster, Onboarding Tracker) run on **6 core 
 
 ### 1. `Agent` (The People Model)
 * **Why it's needed:** Commissions, listings and onboarding can't be tracked without knowing who your agents are.
-* **What it stores:** Full name, contact details, CalDRE license number and expiry, display title, status, **current** commission split tier (e.g. 90/10), and mentor relationship.
+* **What it stores:** Full name, contact details, IDFPR license number, license type (Broker / Managing Broker) and expiry, display title, status, **current** commission split tier (e.g. 90/10), and mentor relationship.
 * **Where you see it:** **Agent Roster**, the agent assigned to each property on **Listings**, and the **Header** profile.
 
 ### 2. `OnboardingRecord` + `OnboardingStepProgress` (The New Recruit Tracker)
-* **Why it's needed:** Each recruit goes through a 6-step journey: W-9 & broker agreement, State DRE license transfer, MLS board access, Supra eKey, CRM setup, and mentor assignment.
-* **What it stores:** One record per recruit (background check, target graduation date, notes), plus **one row per step** with its own status (*Not started / In progress / Awaiting external / Blocked / Complete*) and a blocker note (e.g. "Awaiting State DRE approval").
+* **Why it's needed:** Each recruit goes through a 6-step journey: W-9 & broker agreement, IDFPR license sponsorship transfer, MLS board access, Supra eKey, CRM setup, and mentor assignment.
+* **What it stores:** One record per recruit (background check, target graduation date, notes), plus **one row per step** with its own status (*Not started / In progress / Awaiting external / Blocked / Complete*) and a blocker note (e.g. "Awaiting IDFPR sponsorship approval").
 * **Why one row per step:** Adding a step later (e.g. headshots, first-transaction shadowing) means adding a value, not redesigning the table. The percentage and "current step" are worked out from the rows, so they always match what is actually done.
 * **Where you see it:** **Agent Onboarding Tracker**.
 
@@ -127,7 +127,7 @@ enum ContingencyType {
 
 enum OnboardingStep {
   W9_AND_BROKER_AGREEMENT
-  STATE_DRE_LICENSE_TRANSFER
+  IDFPR_SPONSORSHIP_TRANSFER
   MLS_BOARD_ACCESS
   SUPRA_EKEY
   CRM_PROVISIONING
@@ -137,7 +137,7 @@ enum OnboardingStep {
 enum StepStatus {
   NOT_STARTED
   IN_PROGRESS
-  AWAITING_EXTERNAL // e.g. waiting on the State DRE
+  AWAITING_EXTERNAL // e.g. waiting on IDFPR
   BLOCKED
   COMPLETE
 }
@@ -166,7 +166,7 @@ model Agent {
   lastName         String
   email            String      @unique
   phone            String
-  licenseNumber    String      @unique // e.g. CalDRE #0219488
+  licenseNumber    String      @unique // IDFPR license number, e.g. 475.162034
   licenseExpiresAt DateTime?
   title            String // display title, e.g. "Senior Managing Associate"
   avatarUrl        String?
@@ -208,7 +208,7 @@ model OnboardingStepProgress {
   onboardingRecord   OnboardingRecord @relation(fields: [onboardingRecordId], references: [id], onDelete: Cascade)
   step               OnboardingStep
   status             StepStatus       @default(NOT_STARTED)
-  blockerNote        String? // e.g. "Awaiting State DRE approval"
+  blockerNote        String? // e.g. "Awaiting IDFPR sponsorship approval"
   completedAt        DateTime?
   updatedAt          DateTime         @updatedAt
 
@@ -222,7 +222,7 @@ model Listing {
   mlsNumber      String         @unique // e.g. MLS #24-9182
   address        String // e.g. "742 Evergreen Terrace"
   city           String
-  state          String         @default("CA")
+  state          String         @default("IL")
   zipCode        String
   price          Decimal        @db.Decimal(12, 2) // e.g. 3850000.00
   status         ListingStatus  @default(COMING_SOON)
@@ -403,7 +403,7 @@ Enforce this in the API layer on every query, e.g. filter by the logged-in agent
 | **Listings** | **"Day 12 of Escrow"** | Days since `Transaction.escrowStartDate`, plus 1 |
 | **Listings** | **"48h inspection contingency"** | Earliest `Contingency.deadline` not yet removed, minus now |
 | **Roster** | **"#1 Marcus Vance (90/10 Split, $372K GCI)"** | `Agent.splitTier` + sum of his `CommissionRecord.grossCommission` on deals closed YTD* |
-| **Onboarding** | **"Sarah Lin — 83% — Awaiting State DRE"** | Completed steps ÷ total steps (5 of 6), plus the step whose status is `AWAITING_EXTERNAL` and its blocker note** |
+| **Onboarding** | **"Sarah Lin — 83% — Awaiting IDFPR"** | Completed steps ÷ total steps (5 of 6), plus the step whose status is `AWAITING_EXTERNAL` and its blocker note** |
 
 \* Decide whether the leaderboard shows **gross** commission (GCI, what the agent brought in) or **net** payout (what the agent took home). Both are stored.
 
@@ -426,3 +426,16 @@ Enforce this in the API layer on every query, e.g. filter by the logged-in agent
 | 9 | Escrow company promised but missing; single `imageUrl`; `zipCode` defaulted to 90210; `representation` was free text; same agent could be added to a deal twice | Added `escrowCompany`; `ListingPhoto` table; no zip default; `Representation` enum; unique (deal, agent) |
 | 10 | Monthly target row mixed in the annual goal and calculated fields | Split into `BrokerageAnnualGoal` and `BrokerageMonthlyTarget` (targets + MLS benchmark only) |
 | 11 | No indexes for common dashboard queries | Indexes on statuses, closing dates, agent IDs |
+
+
+---
+
+## Addendum: Illinois setup and yearly compliance checklist
+
+**Brokerage:** A.P Realty Group Inc. · **Managing Broker:** Omar Lopez · **Sponsored brokers:** Omar Lopez, Adam Delort, Lucy Castillo.
+
+* **Agent.licenseType** (`MANAGING_BROKER` / `BROKER`) records each person's IDFPR license type, so the right continuing-education requirement applies to them. Listings default to state `IL`.
+* **ComplianceRequirement** is the checklist template: a title, plain-English description, legal reference, whether it applies to the **brokerage** or to **each licensee**, which license types it covers, its usual due date, and whether it repeats **every year** or only in **license renewal years** (Illinois broker licenses renew April 30 of even-numbered years).
+* **ComplianceItem** is one checklist line for one year: the requirement, the broker it belongs to (empty means the brokerage itself), status (*Not started / In progress / Complete / N/A*), that year's due date, who completed it and when, plus a note. Items are created per year, so every year keeps its own history.
+* **Rules:** the database allows only one row per requirement, per year, per broker. A partial unique index applies the same rule to brokerage-level rows. Overdue status is worked out live from the due date. Agents see only their own items. The managing broker and admin see and update everything.
+* **Starter Illinois items:** brokerage license renewal; Secretary of State annual report; designated managing broker on file; sponsored-licensee reconciliation; written company policies; advertising review; monthly escrow reconciliations; 5-year record retention; and, for each broker, active license and sponsorship, license renewal, CE (12 hours for brokers; 24 hours including the 12-hour broker management course for managing brokers), annual sexual harassment prevention training, independent contractor agreement and W-9, and MLS dues. **Confirm this list with the managing broker or counsel before relying on it.**

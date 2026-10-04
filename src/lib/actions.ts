@@ -10,11 +10,13 @@ import { requireUser } from "./auth";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, signSessionToken } from "./session";
 import {
   canApproveCommissions,
+  canEditCompliance,
   canEditOnboarding,
   canManageEscrows,
   canMarkCommissionsPaid,
 } from "./permissions";
 import { cancelEscrow, closeEscrow } from "./escrow";
+import { ensureComplianceYear } from "./compliance";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -106,4 +108,41 @@ export async function updateOnboardingStepAction(formData: FormData) {
     },
   });
   revalidatePath("/onboarding");
+}
+
+const complianceSchema = z.object({
+  itemId: z.string().uuid(),
+  status: z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "NOT_APPLICABLE"]),
+  note: z.string().trim().max(300).optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export async function updateComplianceItemAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canEditCompliance(user.role)) throw new Error("Not allowed");
+  const data = complianceSchema.parse(Object.fromEntries(formData));
+  const item = await prisma.complianceItem.findUniqueOrThrow({ where: { id: data.itemId } });
+  const complete = data.status === "COMPLETE";
+  const alreadyComplete = item.status === "COMPLETE";
+  await prisma.complianceItem.update({
+    where: { id: item.id },
+    data: {
+      status: data.status,
+      note: data.note || null,
+      dueDate: data.dueDate ? new Date(`${data.dueDate}T12:00:00Z`) : undefined,
+      completedAt: complete ? (alreadyComplete ? item.completedAt : new Date()) : null,
+      completedById: complete ? (alreadyComplete ? item.completedById : user.id) : null,
+    },
+  });
+  revalidatePath("/compliance");
+}
+
+export async function generateComplianceYearAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canEditCompliance(user.role)) throw new Error("Not allowed");
+  const maxYear = new Date().getFullYear() + 1;
+  const year = z.coerce.number().int().min(2000).max(maxYear).parse(formData.get("year"));
+  await ensureComplianceYear(prisma, year);
+  revalidatePath("/compliance");
+  redirect(`/compliance?year=${year}`);
 }

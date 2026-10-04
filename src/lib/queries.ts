@@ -3,6 +3,7 @@ import type { ListingStatus } from "@prisma/client";
 import { prisma } from "./db";
 import {
   commissionScope,
+  complianceScope,
   isStaff,
   onboardingScope,
   transactionScope,
@@ -174,4 +175,21 @@ export async function getOnboarding(viewer: Viewer) {
     orderBy: { createdAt: "asc" },
     include: { agent: { include: { mentor: true } }, steps: true },
   });
+}
+
+export async function getCompliance(viewer: Viewer, year: number) {
+  const scope = complianceScope(viewer);
+  const [items, years] = await Promise.all([
+    prisma.complianceItem.findMany({
+      where: { ...scope, year },
+      include: {
+        requirement: true,
+        agent: { select: { id: true, firstName: true, lastName: true, licenseType: true, licenseNumber: true } },
+        completedBy: { select: { name: true } },
+      },
+      orderBy: [{ requirement: { sortOrder: "asc" } }],
+    }),
+    prisma.complianceItem.groupBy({ by: ["year"], where: scope, orderBy: { year: "desc" } }),
+  ]);
+  return { items, years: years.map((y) => y.year) };
 }

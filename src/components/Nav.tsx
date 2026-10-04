@@ -8,6 +8,7 @@ const links = [
   { href: "/listings", label: "Listings" },
   { href: "/roster", label: "Roster" },
   { href: "/onboarding", label: "Onboarding" },
+  { href: "/compliance", label: "Compliance" },
 ];
 
 export function Nav() {

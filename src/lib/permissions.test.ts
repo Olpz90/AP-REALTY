@@ -4,6 +4,8 @@ import {
   canManageEscrows,
   canSeeAgentFinancials,
   commissionScope,
+  complianceScope,
+  canEditCompliance,
   transactionScope,
 } from "./permissions";
 
@@ -39,5 +41,12 @@ describe("permissions", () => {
     expect(canSeeAgentFinancials(agent, "agent-1")).toBe(true);
     expect(canSeeAgentFinancials(agent, "agent-2")).toBe(false);
     expect(canSeeAgentFinancials(admin, "agent-2")).toBe(true);
+  });
+
+  it("limits agents to their own compliance items; only staff edit them", () => {
+    expect(complianceScope(agent)).toEqual({ agentId: "agent-1" });
+    expect(complianceScope(admin)).toEqual({});
+    expect(canEditCompliance("AGENT")).toBe(false);
+    expect(canEditCompliance("MANAGING_BROKER")).toBe(true);
   });
 });

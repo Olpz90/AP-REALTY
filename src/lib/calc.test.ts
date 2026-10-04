@@ -70,7 +70,7 @@ describe("onboardingProgress", () => {
   it("reports 5 of 6 steps as 83% with the awaiting step as current", () => {
     const steps = [
       { step: "W9_AND_BROKER_AGREEMENT", status: "COMPLETE" },
-      { step: "STATE_DRE_LICENSE_TRANSFER", status: "AWAITING_EXTERNAL", blockerNote: "Awaiting State DRE approval" },
+      { step: "IDFPR_SPONSORSHIP_TRANSFER", status: "AWAITING_EXTERNAL", blockerNote: "Awaiting IDFPR sponsorship approval" },
       { step: "MLS_BOARD_ACCESS", status: "COMPLETE" },
       { step: "SUPRA_EKEY", status: "COMPLETE" },
       { step: "CRM_PROVISIONING", status: "COMPLETE" },
@@ -78,8 +78,8 @@ describe("onboardingProgress", () => {
     ].map((s) => ({ blockerNote: null, ...s })) as Parameters<typeof onboardingProgress>[0];
     const p = onboardingProgress(steps);
     expect(p.percent).toBe(83);
-    expect(p.currentStep).toBe("STATE_DRE_LICENSE_TRANSFER");
-    expect(p.blockerNote).toBe("Awaiting State DRE approval");
+    expect(p.currentStep).toBe("IDFPR_SPONSORSHIP_TRANSFER");
+    expect(p.blockerNote).toBe("Awaiting IDFPR sponsorship approval");
   });
   it("treats missing step rows as not started", () => {
     expect(onboardingProgress([]).percent).toBe(0);
