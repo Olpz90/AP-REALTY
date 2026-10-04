@@ -5,18 +5,23 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { requireUser } from "./auth";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, signSessionToken } from "./session";
 import {
   canApproveCommissions,
+  canCreateListing,
+  canEditListing,
   canEditCompliance,
   canEditOnboarding,
   canManageEscrows,
   canMarkCommissionsPaid,
+  isStaff,
 } from "./permissions";
 import { cancelEscrow, closeEscrow } from "./escrow";
 import { ensureComplianceYear } from "./compliance";
+import { isEscrowControlled, LISTING_FIELD_LABELS, listingDates, listingSchema } from "./listings";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -145,4 +150,69 @@ export async function generateComplianceYearAction(formData: FormData) {
   await ensureComplianceYear(prisma, year);
   revalidatePath("/compliance");
   redirect(`/compliance?year=${year}`);
+}
+
+export type ListingFormState = { error?: string } | undefined;
+
+export async function saveListingAction(_prev: ListingFormState, formData: FormData): Promise<ListingFormState> {
+  const user = await requireUser();
+  const raw = Object.fromEntries(Array.from(formData.entries()).filter(([, v]) => v !== ""));
+  const parsed = listingSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = String(issue.path[0] ?? "");
+    return { error: `${LISTING_FIELD_LABELS[field] ?? "Form"}: ${issue.message}` };
+  }
+  const d = parsed.data;
+  if (!canCreateListing(user) || (!isStaff(user.role) && d.primaryAgentId !== user.agentId)) {
+    return { error: "You can only list properties for yourself." };
+  }
+
+  const existing = d.id
+    ? await prisma.listing.findUnique({
+        where: { id: d.id },
+        include: { photos: { orderBy: { sortOrder: "asc" }, take: 1 } },
+      })
+    : null;
+  if (d.id && (!existing || !canEditListing(user, existing))) return { error: "You can't edit this listing." };
+
+  const status = existing && isEscrowControlled(existing.status) ? existing.status : (d.status ?? existing?.status ?? "COMING_SOON");
+  const listedAtInput = d.listedAt ? new Date(`${d.listedAt}T12:00:00Z`) : undefined;
+  const data = {
+    mlsNumber: d.mlsNumber,
+    address: d.address,
+    city: d.city,
+    state: d.state,
+    zipCode: d.zipCode,
+    price: d.price,
+    bedrooms: d.bedrooms,
+    bathrooms: d.bathrooms,
+    squareFeet: d.squareFeet,
+    primaryAgentId: d.primaryAgentId,
+    status,
+    ...listingDates(status, listedAtInput, existing, new Date()),
+  };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const listing = existing
+        ? await tx.listing.update({ where: { id: existing.id }, data })
+        : await tx.listing.create({ data });
+      const cover = existing?.photos[0];
+      if (d.photoUrl && cover) {
+        if (cover.url !== d.photoUrl) await tx.listingPhoto.update({ where: { id: cover.id }, data: { url: d.photoUrl } });
+      } else if (d.photoUrl) {
+        await tx.listingPhoto.create({ data: { listingId: listing.id, url: d.photoUrl, sortOrder: 0 } });
+      } else if (cover) {
+        await tx.listingPhoto.delete({ where: { id: cover.id } });
+      }
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { error: "Another listing already uses that MLS #." };
+    }
+    throw e;
+  }
+  revalidatePath("/", "layout");
+  redirect("/listings");
 }

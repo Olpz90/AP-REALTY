@@ -6,6 +6,8 @@ import {
   commissionScope,
   complianceScope,
   canEditCompliance,
+  canCreateListing,
+  canEditListing,
   transactionScope,
 } from "./permissions";
 
@@ -48,5 +50,13 @@ describe("permissions", () => {
     expect(complianceScope(admin)).toEqual({});
     expect(canEditCompliance("AGENT")).toBe(false);
     expect(canEditCompliance("MANAGING_BROKER")).toBe(true);
+  });
+
+  it("lets agents add and edit only their own listings", () => {
+    expect(canCreateListing(agent)).toBe(true);
+    expect(canEditListing(agent, { primaryAgentId: "agent-1" })).toBe(true);
+    expect(canEditListing(agent, { primaryAgentId: "agent-2" })).toBe(false);
+    expect(canEditListing(admin, { primaryAgentId: "agent-2" })).toBe(true);
+    expect(canCreateListing({ role: "AGENT", agentId: null })).toBe(false);
   });
 });

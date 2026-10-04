@@ -11,6 +11,10 @@ export const canMarkCommissionsPaid = (role: UserRole) => isStaff(role);
 export const canEditOnboarding = (role: UserRole) => isStaff(role);
 export const canEditCompliance = (role: UserRole) => isStaff(role);
 
+export const canCreateListing = (viewer: Viewer) => isStaff(viewer.role) || !!viewer.agentId;
+export const canEditListing = (viewer: Viewer, listing: { primaryAgentId: string }) =>
+  isStaff(viewer.role) || (!!viewer.agentId && viewer.agentId === listing.primaryAgentId);
+
 export function transactionScope(viewer: Viewer): Prisma.TransactionWhereInput {
   if (isStaff(viewer.role)) return {};
   return { agents: { some: { agentId: viewer.agentId ?? NO_AGENT } } };

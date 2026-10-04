@@ -193,3 +193,18 @@ export async function getCompliance(viewer: Viewer, year: number) {
   ]);
   return { items, years: years.map((y) => y.year) };
 }
+
+export async function getListingForEdit(id: string) {
+  return prisma.listing.findUnique({
+    where: { id },
+    include: { photos: { orderBy: { sortOrder: "asc" }, take: 1 } },
+  });
+}
+
+export async function getListingAgentOptions(viewer: Viewer) {
+  return prisma.agent.findMany({
+    where: isStaff(viewer.role) ? { status: { in: ["ACTIVE", "ONBOARDING"] } } : { id: viewer.agentId ?? "" },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+  });
+}

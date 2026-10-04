@@ -1,6 +1,6 @@
 # A.P Realty Group Inc. — brokerage portal
 
-Next.js 14 (App Router) + PostgreSQL + Prisma. Five screens: Dashboard, Listings & pipeline, Agent roster, Onboarding tracker and a yearly Illinois compliance checklist, with email/password sign-in and role-based access (Managing Broker / Admin / Agent).
+Next.js 14 (App Router) + PostgreSQL + Prisma. Five screens: Dashboard, Listings & pipeline, Agent roster, Onboarding tracker and a yearly Illinois compliance checklist, with add/edit listing forms, email/password sign-in and role-based access (Managing Broker / Admin / Agent).
 
 The data model is described in [docs/data-models.md](docs/data-models.md).
 

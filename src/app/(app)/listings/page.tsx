@@ -3,7 +3,7 @@ import type { ListingStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { getListings, LISTING_STATUSES } from "@/lib/queries";
 import { cancelEscrowAction, closeEscrowAction } from "@/lib/actions";
-import { canManageEscrows } from "@/lib/permissions";
+import { canCreateListing, canEditListing, canManageEscrows } from "@/lib/permissions";
 import { daysOnMarket, escrowDay, nextContingency } from "@/lib/calc";
 import { money, titleCase } from "@/lib/format";
 import { LISTING_STATUS } from "@/lib/labels";
@@ -21,7 +21,13 @@ export default async function ListingsPage({ searchParams }: { searchParams: { s
 
   return (
     <>
-      <PageHeader title="Listings & pipeline" subtitle={`${listings.length} properties`} />
+      <PageHeader title="Listings & pipeline" subtitle={`${listings.length} properties`}>
+        {canCreateListing(user) && (
+          <Link href="/listings/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">
+            + Add listing
+          </Link>
+        )}
+      </PageHeader>
       <div className="mb-6 flex flex-wrap gap-2">
         {tabs.map((t) => {
           const active = t.value === status;
@@ -51,13 +57,23 @@ export default async function ListingsPage({ searchParams }: { searchParams: { s
             return (
               <Card key={l.id} className="flex flex-col overflow-hidden">
                 <div className="relative">
-                  {l.photos[0] && (
+                  {l.photos[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={l.photos[0].url} alt="" className="h-44 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-44 w-full items-center justify-center bg-slate-100 text-xs text-slate-400">No photo yet</div>
                   )}
                   <div className="absolute left-3 top-3">
                     <Badge tone={LISTING_STATUS[l.status].tone}>{LISTING_STATUS[l.status].label}</Badge>
                   </div>
+                  {canEditListing(user, l) && (
+                    <Link
+                      href={`/listings/${l.id}/edit`}
+                      className="absolute right-3 top-3 rounded-md bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 hover:bg-white"
+                    >
+                      Edit
+                    </Link>
+                  )}
                 </div>
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div>
